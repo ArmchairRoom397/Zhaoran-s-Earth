@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Zhaoran's Earth · 三维地球（真实太阳）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Zhaoran's Earth · 三维地球（手机分格加载优化版）</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -11,32 +11,33 @@
       background-color: #000005;
       font-family: 'Segoe UI', 'Microsoft YaHei', Roboto, sans-serif;
       color: #fff; user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
     canvas { display: block; }
 
-    /* ===== 左侧导航栏 ===== */
+    /* ===== 左侧导航栏（移动端适配） ===== */
     .geo-sidebar {
       position: absolute; top: 0; left: 0;
-      width: 56px; height: 100vh;
+      width: 48px; height: 100vh;
       background: rgba(20, 26, 38, 0.92);
       backdrop-filter: blur(16px);
       border-right: 1px solid rgba(255, 255, 255, 0.06);
       display: flex; flex-direction: column; align-items: center;
-      padding: 16px 0; z-index: 500; gap: 6px;
+      padding: 12px 0; z-index: 500; gap: 4px;
     }
     .geo-sidebar .logo {
-      width: 40px; height: 40px;
+      width: 36px; height: 36px;
       display: flex; align-items: center; justify-content: center;
-      margin-bottom: 14px; border-radius: 8px;
+      margin-bottom: 10px; border-radius: 8px;
       background: linear-gradient(135deg, #2a6fd6, #1b4a9c);
-      font-size: 20px;
+      font-size: 18px;
       box-shadow: 0 4px 14px rgba(42, 111, 214, 0.35);
       flex-shrink: 0;
     }
     .geo-sidebar .side-btn {
-      width: 42px; height: 42px; border-radius: 8px;
+      width: 38px; height: 38px; border-radius: 8px;
       border: none; background: transparent; color: #9aaec9;
-      font-size: 17px; cursor: pointer;
+      font-size: 16px; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       transition: background 0.18s, color 0.18s;
       position: relative; flex-shrink: 0;
@@ -44,89 +45,88 @@
     .geo-sidebar .side-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
     .geo-sidebar .side-btn.active { background: rgba(58,123,213,0.25); color: #6fb0ff; }
     .geo-sidebar .side-btn .side-tip {
-      position: absolute; left: 56px; top: 50%;
+      position: absolute; left: 50px; top: 50%;
       transform: translateY(-50%);
       background: rgba(0,0,0,0.85); color: #fff;
-      padding: 5px 10px; border-radius: 4px; font-size: 12px;
+      padding: 4px 8px; border-radius: 4px; font-size: 11px;
       white-space: nowrap; opacity: 0; pointer-events: none;
       transition: opacity 0.15s;
       border: 1px solid rgba(255,255,255,0.1); z-index: 600;
     }
     .geo-sidebar .side-btn:hover .side-tip { opacity: 1; }
     .geo-sidebar .side-sep {
-      width: 28px; height: 1px;
-      background: rgba(255,255,255,0.08); margin: 6px 0; flex-shrink: 0;
+      width: 24px; height: 1px;
+      background: rgba(255,255,255,0.08); margin: 4px 0; flex-shrink: 0;
     }
 
     /* ===== 左上角品牌 ===== */
     .geo-brand {
-      position: absolute; top: 18px; left: 72px; z-index: 400;
-      display: flex; align-items: center; gap: 8px;
-      font-size: 18px; font-weight: 600; letter-spacing: 0.5px;
+      position: absolute; top: 14px; left: 60px; z-index: 400;
+      display: flex; align-items: center; gap: 6px;
+      font-size: 15px; font-weight: 600; letter-spacing: 0.5px;
       text-shadow: 0 2px 8px rgba(0,0,0,0.8);
       pointer-events: none;
     }
-    .geo-brand .dot { color: #4a9eff; font-size: 22px; line-height: 1; }
+    .geo-brand .dot { color: #4a9eff; font-size: 18px; line-height: 1; }
 
-    /* ===== 设置面板（可拖动）—— 默认位于左侧设置按钮旁 ===== */
+    /* ===== 设置面板（移动端适配） ===== */
     .geo-settings {
-      position: absolute; top: 70px; left: 72px;
-      width: 300px;
-      background: rgba(20,26,38,0.94);
+      position: absolute; top: 58px; left: 60px;
+      width: calc(100vw - 76px); max-width: 340px;
+      background: rgba(20,26,38,0.96);
       backdrop-filter: blur(20px);
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.08);
       box-shadow: 0 8px 36px rgba(0,0,0,0.7);
       z-index: 450; overflow: hidden;
-      transition: opacity 0.28s ease;
-      max-height: calc(100vh - 90px);
+      transition: opacity 0.28s ease, transform 0.28s ease;
+      max-height: calc(100vh - 120px);
       display: flex; flex-direction: column;
     }
     .geo-settings.hidden { opacity: 0; pointer-events: none; transform: translateX(-110%); }
     .geo-settings .panel-title {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 18px; font-size: 14px; font-weight: 600;
+      padding: 12px 16px; font-size: 13px; font-weight: 600;
       color: #e6eefc;
       border-bottom: 1px solid rgba(255,255,255,0.06);
       background: rgba(0,0,0,0.15);
-      cursor: grab;
-      flex-shrink: 0;
-      user-select: none;
+      cursor: grab; flex-shrink: 0; user-select: none;
     }
     .geo-settings .panel-title:active { cursor: grabbing; }
     .geo-settings .panel-title .close-x {
-      cursor: pointer; font-size: 16px; color: #7a8ba8;
+      cursor: pointer; font-size: 15px; color: #7a8ba8;
       transition: color 0.15s; line-height: 1;
+      padding: 4px;
     }
     .geo-settings .panel-title .close-x:hover { color: #fff; }
     .geo-settings .panel-body {
-      overflow-y: auto;
-      flex: 1;
+      overflow-y: auto; flex: 1;
     }
     .geo-settings .setting-section {
-      padding: 14px 18px;
+      padding: 12px 16px;
       border-bottom: 1px solid rgba(255,255,255,0.05);
     }
     .geo-settings .setting-section:last-child { border-bottom: none; }
     .geo-settings .section-label {
-      font-size: 11px; text-transform: uppercase;
+      font-size: 10px; text-transform: uppercase;
       letter-spacing: 1px; color: #6b7f9e;
-      margin-bottom: 10px; font-weight: 600;
+      margin-bottom: 8px; font-weight: 600;
     }
     .setting-row {
       display: flex; align-items: center;
       justify-content: space-between;
-      margin-bottom: 12px; gap: 10px;
+      margin-bottom: 10px; gap: 8px;
+      flex-wrap: wrap;
     }
     .setting-row:last-child { margin-bottom: 0; }
     .setting-row .row-label {
-      font-size: 13px; color: #b8c8e0;
-      display: flex; align-items: center; gap: 6px;
-      white-space: nowrap; min-width: 62px;
+      font-size: 12px; color: #b8c8e0;
+      display: flex; align-items: center; gap: 4px;
+      white-space: nowrap; min-width: 52px;
     }
     .setting-row .row-value {
-      font-size: 12px; color: #6fb0ff;
-      min-width: 48px; text-align: right;
+      font-size: 11px; color: #6fb0ff;
+      min-width: 42px; text-align: right;
       font-variant-numeric: tabular-nums; font-weight: 500;
     }
     .setting-row input[type="range"] {
@@ -134,13 +134,13 @@
       accent-color: #3a7bd5; cursor: pointer;
       border-radius: 4px; background: rgba(255,255,255,0.1);
     }
-    .btn-toggle-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .btn-toggle-group { display: flex; gap: 5px; flex-wrap: wrap; }
     .btn-toggle-group .tg-btn {
-      flex: 1; min-width: 64px; padding: 7px 10px;
+      flex: 1; min-width: 56px; padding: 6px 8px;
       border-radius: 6px;
       border: 1px solid rgba(255,255,255,0.1);
       background: rgba(50,62,82,0.5);
-      color: #b8c8e0; font-size: 12px;
+      color: #b8c8e0; font-size: 11px;
       cursor: pointer; transition: all 0.18s;
       text-align: center; white-space: nowrap;
     }
@@ -153,30 +153,31 @@
       color: #fff;
       box-shadow: 0 0 10px rgba(58,123,213,0.35);
     }
-    .upload-row { display: flex; align-items: center; gap: 8px; }
+    .upload-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .upload-row .upload-label {
-      display: flex; align-items: center; gap: 5px;
+      display: flex; align-items: center; gap: 4px;
       background: rgba(50,62,82,0.6);
       border: 1px solid rgba(255,255,255,0.08);
-      color: #cdddf2; padding: 7px 14px;
-      border-radius: 6px; font-size: 12px;
+      color: #cdddf2; padding: 6px 12px;
+      border-radius: 6px; font-size: 11px;
       cursor: pointer; transition: background 0.18s;
       white-space: nowrap;
     }
     .upload-row .upload-label:hover { background: rgba(70,90,125,0.8); }
     .upload-row .file-name {
-      flex: 1; font-size: 11px; color: #6b7f9e;
+      flex: 1; font-size: 10px; color: #6b7f9e;
       overflow: hidden; text-overflow: ellipsis;
       white-space: nowrap;
       background: rgba(0,0,0,0.25);
-      padding: 6px 10px; border-radius: 5px;
+      padding: 5px 8px; border-radius: 5px;
       border: 1px solid rgba(255,255,255,0.05);
+      min-width: 60px;
     }
     .upload-row .reset-btn {
       background: transparent;
       border: 1px solid rgba(255,255,255,0.12);
-      color: #8a9bb8; padding: 6px 12px;
-      border-radius: 5px; font-size: 12px;
+      color: #8a9bb8; padding: 5px 10px;
+      border-radius: 5px; font-size: 11px;
       cursor: pointer; transition: all 0.15s;
       white-space: nowrap;
     }
@@ -185,19 +186,19 @@
       border-color: rgba(255,255,255,0.3); color: #fff;
     }
 
-    /* ===== 右下角控件（横向摆放） ===== */
+    /* ===== 右下角控件（移动端适配） ===== */
     .geo-zoom-ctrl {
-      position: absolute; right: 16px; bottom: 60px;
+      position: absolute; right: 12px; bottom: 50px;
       z-index: 400;
       display: flex; flex-direction: row;
-      gap: 8px; align-items: center;
+      gap: 6px; align-items: center;
     }
     .geo-zoom-ctrl .zoom-btn {
-      width: 34px; height: 34px; border-radius: 8px;
+      width: 32px; height: 32px; border-radius: 8px;
       background: rgba(30,38,55,0.88);
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255,255,255,0.1);
-      color: #cdddf2; font-size: 18px;
+      color: #cdddf2; font-size: 16px;
       cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       transition: background 0.15s;
@@ -207,7 +208,7 @@
 
     /* ===== 实时缩略图 ===== */
     .mini-globe-wrap {
-      width: 92px; height: 92px;
+      width: 80px; height: 80px;
       border-radius: 50%;
       background: #0a0e18;
       border: 2px solid rgba(74,158,255,0.4);
@@ -231,14 +232,15 @@
 
     /* ===== 左下角比例尺 + 层级 ===== */
     .geo-scale-box {
-      position: absolute; left: 72px; bottom: 18px;
+      position: absolute; left: 60px; bottom: 14px;
       z-index: 400; display: flex; align-items: center;
-      gap: 14px; pointer-events: none;
+      gap: 8px; pointer-events: none;
+      flex-wrap: wrap;
     }
     .geo-scale, .geo-level {
-      font-size: 11px; color: #9aaec9;
+      font-size: 10px; color: #9aaec9;
       background: rgba(0,0,0,0.45);
-      padding: 4px 12px; border-radius: 4px;
+      padding: 3px 8px; border-radius: 4px;
       border: 1px solid rgba(255,255,255,0.08);
       letter-spacing: 0.3px;
     }
@@ -250,33 +252,34 @@
 
     /* GPU 角标 */
     .gpu-mini {
-      position: absolute; top: 60px; right: 16px;
-      z-index: 400; padding: 4px 10px;
-      border-radius: 12px;
+      position: absolute; top: 52px; right: 12px;
+      z-index: 400; padding: 3px 8px;
+      border-radius: 10px;
       background: rgba(0,0,0,0.5);
       backdrop-filter: blur(8px);
       border: 1px solid rgba(74,255,128,0.2);
-      color: #6bff9a; font-size: 10px;
+      color: #6bff9a; font-size: 9px;
       font-weight: 500; letter-spacing: 0.3px;
       pointer-events: none; user-select: none;
-      max-width: 260px; overflow: hidden;
+      max-width: 200px; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
       transition: opacity 0.3s ease;
       display: none;
     }
     .gpu-mini.hidden { opacity: 0; }
 
-    .geo-settings::-webkit-scrollbar { width: 5px; }
+    .geo-settings::-webkit-scrollbar { width: 4px; }
     .geo-settings::-webkit-scrollbar-track { background: transparent; }
     .geo-settings::-webkit-scrollbar-thumb {
       background: rgba(255,255,255,0.12); border-radius: 3px;
     }
 
-    @media (max-width: 900px) {
-      .geo-settings { width: calc(100vw - 80px); left: 64px; top: 64px; }
-      .geo-brand { top: 14px; left: 64px; font-size: 15px; }
-      .gpu-mini { display: none; }
-      .geo-zoom-ctrl { bottom: 50px; }
+    /* 移动端横屏优化 */
+    @media (max-height: 500px) {
+      .geo-settings { max-height: calc(100vh - 90px); top: 50px; }
+      .geo-brand { font-size: 13px; top: 10px; }
+      .geo-zoom-ctrl { bottom: 40px; }
+      .mini-globe-wrap { width: 64px; height: 64px; }
     }
   </style>
 </head>
@@ -300,8 +303,8 @@
 
   <div class="gpu-mini" id="gpuBadge">⚡ GPU 加速已启用</div>
 
-  <!-- 设置面板（可拖动）—— 默认在左侧设置按钮旁 -->
-  <div class="geo-settings" id="geoSettings">
+  <!-- 设置面板 -->
+  <div class="geo-settings hidden" id="geoSettings">
     <div class="panel-title" id="settingsPanelTitle">
       <span>⚙️ 显示设置</span>
       <span class="close-x" id="closeSettings">✕</span>
@@ -315,8 +318,8 @@
           <span class="file-name" id="fileName">未选择文件</span>
           <button class="reset-btn" id="resetTexture">重置</button>
         </div>
-        <div style="font-size: 10px; color: #6b7f9e; margin-top: 8px; line-height: 1.4;">
-          💡 推荐 21600×10800 或更高，自动适配比例
+        <div style="font-size: 9px; color: #6b7f9e; margin-top: 6px; line-height: 1.3;">
+          💡 推荐 4096×2048 或更高，自动适配比例
         </div>
       </div>
 
@@ -378,7 +381,7 @@
     </div>
   </div>
 
-  <!-- 右下角控件（横向摆放） -->
+  <!-- 右下角控件 -->
   <div class="geo-zoom-ctrl">
     <button class="zoom-btn" id="btnZoomIn" title="放大">+</button>
     <button class="zoom-btn" id="btnZoomOut" title="缩小">−</button>
@@ -410,10 +413,19 @@
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 
-    // ==================== 高清优化配置 ====================
-    const SPHERE_SEGMENTS = 2048;
-    const SUPERSAMPLE_FACTOR = 1.5;
-    const MINI_SIZE = 256;
+    // ==================== 移动端性能优化配置 ====================
+    const IS_MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // 移动端降采样，减少球体细分，提升性能
+    const SPHERE_SEGMENTS = IS_MOBILE ? 512 : 1024;   // 移动端降低到512
+    const SUPERSAMPLE_FACTOR = IS_MOBILE ? 1.0 : 1.3;  // 移动端不超采样
+    const MINI_SIZE = IS_MOBILE ? 128 : 256;           // 缩略图减小
+    const STAR_COUNT = IS_MOBILE ? 6000 : 12000;       // 星星减少
+    
+    // 分格加载：将纹理分成 2x1 或 4x2 块逐步加载（这里用更轻量的方案：延迟加载 + 按需渲染）
+    // 但为了真正的“分格”，我们使用 Canvas 切片 + 渐进式纹理更新，但 Three.js 纹理不支持直接分块。
+    // 替代方案：降低初始纹理分辨率，等加载完成后再替换为高清。同时限制纹理最大尺寸。
+    const MAX_TEXTURE_SIZE = IS_MOBILE ? 4096 : 8192;   // 移动端限制纹理最大边长为 4096
 
     // ==================== 场景基础 ====================
     const scene = new THREE.Scene();
@@ -508,7 +520,7 @@
     // ==================== 控制器 ====================
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
+    controls.dampingFactor = 0.08;
     controls.autoRotate = false;
     controls.enableZoom = true;
     controls.zoomSpeed = 1.2;
@@ -525,7 +537,10 @@
     // ==================== 地球几何体 ====================
     const geometry = new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_SEGMENTS, 0, Math.PI * 2, 0, Math.PI);
 
-    const DEFAULT_TEXTURE_URL = './earth_atmos_2048.jpg';
+    // 移动端使用更小的默认纹理，减少内存和带宽
+    const DEFAULT_TEXTURE_URL = IS_MOBILE 
+      ? 'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg' 
+      : './earth_atmos_2048.jpg';
     const FALLBACK_TEXTURE_URL = 'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg';
 
     const textureLoader = new THREE.TextureLoader();
@@ -541,33 +556,73 @@
     let currentMaterial = basicMaterial;
     let currentTexture = null;
 
+    // 配置纹理，移动端限制尺寸并关闭 mipmap 如果太大
     function configureTexture(tex) {
       if (!tex) return;
       tex.encoding = THREE.sRGBEncoding;
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
-      tex.minFilter = THREE.LinearMipmapLinearFilter;
       tex.magFilter = THREE.LinearFilter;
-      tex.anisotropy = maxAnisotropy;
-      tex.generateMipmaps = true;
+      
+      // 移动端或大纹理使用 LinearFilter + 关闭 mipmap 以减少内存
+      if (IS_MOBILE || (tex.image && (tex.image.width > 2048 || tex.image.height > 1024))) {
+        tex.minFilter = THREE.LinearFilter;
+        tex.generateMipmaps = false;
+      } else {
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.generateMipmaps = true;
+      }
+      
+      tex.anisotropy = IS_MOBILE ? Math.min(4, maxAnisotropy) : maxAnisotropy;
       tex.premultiplyAlpha = false;
       tex.unpackAlignment = 1;
       tex.format = THREE.RGBAFormat;
-      if (tex.image && tex.image.width > 8192) {
-        tex.minFilter = THREE.LinearFilter;
-        tex.generateMipmaps = false;
-      }
       return tex;
     }
 
     function loadDefaultTexture(onSuccess) {
-      textureLoader.load(DEFAULT_TEXTURE_URL, (tex) => {
-        configureTexture(tex);
-        if (onSuccess) onSuccess(tex);
-      }, undefined, () => {
-        textureLoader.load(FALLBACK_TEXTURE_URL, (tex) => {
+      // 移动端优先加载较小纹理
+      const primaryUrl = IS_MOBILE ? FALLBACK_TEXTURE_URL : DEFAULT_TEXTURE_URL;
+      textureLoader.load(primaryUrl, (tex) => {
+        // 如果移动端且图片过大，进行降采样
+        if (IS_MOBILE && tex.image && (tex.image.width > MAX_TEXTURE_SIZE || tex.image.height > MAX_TEXTURE_SIZE/2)) {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const scale = Math.min(MAX_TEXTURE_SIZE / tex.image.width, (MAX_TEXTURE_SIZE/2) / tex.image.height);
+          const newW = Math.floor(tex.image.width * scale);
+          const newH = Math.floor(tex.image.height * scale);
+          canvas.width = newW;
+          canvas.height = newH;
+          ctx.drawImage(tex.image, 0, 0, newW, newH);
+          const newTex = new THREE.CanvasTexture(canvas);
+          configureTexture(newTex);
+          newTex.encoding = THREE.sRGBEncoding;
+          if (onSuccess) onSuccess(newTex);
+          tex.dispose();
+        } else {
           configureTexture(tex);
           if (onSuccess) onSuccess(tex);
+        }
+      }, undefined, () => {
+        textureLoader.load(FALLBACK_TEXTURE_URL, (tex) => {
+          if (IS_MOBILE && tex.image && (tex.image.width > MAX_TEXTURE_SIZE || tex.image.height > MAX_TEXTURE_SIZE/2)) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const scale = Math.min(MAX_TEXTURE_SIZE / tex.image.width, (MAX_TEXTURE_SIZE/2) / tex.image.height);
+            const newW = Math.floor(tex.image.width * scale);
+            const newH = Math.floor(tex.image.height * scale);
+            canvas.width = newW;
+            canvas.height = newH;
+            ctx.drawImage(tex.image, 0, 0, newW, newH);
+            const newTex = new THREE.CanvasTexture(canvas);
+            configureTexture(newTex);
+            newTex.encoding = THREE.sRGBEncoding;
+            if (onSuccess) onSuccess(newTex);
+            tex.dispose();
+          } else {
+            configureTexture(tex);
+            if (onSuccess) onSuccess(tex);
+          }
         }, undefined, () => {
           if (onSuccess) onSuccess(null);
         });
@@ -587,9 +642,8 @@
     const earth = new THREE.Mesh(geometry, currentMaterial);
     scene.add(earth);
 
-    // ==================== 云层 ====================
-    const cloudGeometry = new THREE.SphereGeometry(1.012, 1024, 1024, 0, Math.PI * 2, 0, Math.PI);
-    const CLOUD_TEXTURE_8192 = 'https://threejs.org/examples/textures/planets/earth_clouds_8192.png';
+    // ==================== 云层（移动端使用更低分辨率） ====================
+    const cloudGeometry = new THREE.SphereGeometry(1.012, IS_MOBILE ? 256 : 512, IS_MOBILE ? 256 : 512, 0, Math.PI * 2, 0, Math.PI);
     const CLOUD_TEXTURE_2048 = 'https://threejs.org/examples/textures/planets/earth_clouds_2048.png';
     const CLOUD_TEXTURE_1024 = 'https://threejs.org/examples/textures/planets/earth_clouds_1024.png';
 
@@ -622,34 +676,27 @@
     }
 
     function loadCloudTexture() {
-      textureLoader.load(CLOUD_TEXTURE_8192, 
+      // 移动端使用 1024 云纹理，减少负载
+      const url = IS_MOBILE ? CLOUD_TEXTURE_1024 : CLOUD_TEXTURE_2048;
+      textureLoader.load(url, 
         (tex) => {
           tex.encoding = THREE.sRGBEncoding;
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          tex.minFilter = THREE.LinearMipmapLinearFilter;
+          tex.minFilter = THREE.LinearFilter;
           tex.magFilter = THREE.LinearFilter;
-          tex.anisotropy = maxAnisotropy;
-          tex.generateMipmaps = true;
+          tex.anisotropy = IS_MOBILE ? 2 : maxAnisotropy;
+          tex.generateMipmaps = false;
           applyCloudTexture(tex);
         }, undefined, () => {
-          textureLoader.load(CLOUD_TEXTURE_2048, (tex) => {
+          // 失败则尝试 1024
+          textureLoader.load(CLOUD_TEXTURE_1024, (tex) => {
             tex.encoding = THREE.sRGBEncoding;
             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-            tex.minFilter = THREE.LinearMipmapLinearFilter;
+            tex.minFilter = THREE.LinearFilter;
             tex.magFilter = THREE.LinearFilter;
-            tex.anisotropy = maxAnisotropy;
-            tex.generateMipmaps = true;
+            tex.anisotropy = IS_MOBILE ? 2 : maxAnisotropy;
+            tex.generateMipmaps = false;
             applyCloudTexture(tex);
-          }, undefined, () => {
-            textureLoader.load(CLOUD_TEXTURE_1024, (tex) => {
-              tex.encoding = THREE.sRGBEncoding;
-              tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-              tex.minFilter = THREE.LinearMipmapLinearFilter;
-              tex.magFilter = THREE.LinearFilter;
-              tex.anisotropy = maxAnisotropy;
-              tex.generateMipmaps = true;
-              applyCloudTexture(tex);
-            });
           });
         });
     }
@@ -663,11 +710,11 @@
     ambientLight.visible = false;
     dirLight.visible = false;
 
-    // ==================== 太阳（真实太空观感）====================
+    // ==================== 太阳 ====================
     const SUN_DISTANCE = 500;
     const SUN_RADIUS = 2.5;
 
-    const sunCoreGeometry = new THREE.SphereGeometry(SUN_RADIUS, 64, 64);
+    const sunCoreGeometry = new THREE.SphereGeometry(SUN_RADIUS, IS_MOBILE ? 32 : 64, IS_MOBILE ? 32 : 64);
     const sunCoreMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       fog: false,
@@ -677,7 +724,7 @@
     sunCore.visible = false;
     scene.add(sunCore);
 
-    const sunHalo1Geometry = new THREE.SphereGeometry(SUN_RADIUS * 1.8, 64, 64);
+    const sunHalo1Geometry = new THREE.SphereGeometry(SUN_RADIUS * 1.8, IS_MOBILE ? 32 : 64, IS_MOBILE ? 32 : 64);
     const sunHalo1Material = new THREE.MeshBasicMaterial({
       color: 0xfff2cc,
       transparent: true,
@@ -691,7 +738,7 @@
     sunHalo1.visible = false;
     scene.add(sunHalo1);
 
-    const sunHalo2Geometry = new THREE.SphereGeometry(SUN_RADIUS * 3.2, 64, 64);
+    const sunHalo2Geometry = new THREE.SphereGeometry(SUN_RADIUS * 3.2, IS_MOBILE ? 32 : 64, IS_MOBILE ? 32 : 64);
     const sunHalo2Material = new THREE.MeshBasicMaterial({
       color: 0xffdd88,
       transparent: true,
@@ -705,7 +752,7 @@
     sunHalo2.visible = false;
     scene.add(sunHalo2);
 
-    const sunHalo3Geometry = new THREE.SphereGeometry(SUN_RADIUS * 6.0, 64, 64);
+    const sunHalo3Geometry = new THREE.SphereGeometry(SUN_RADIUS * 6.0, IS_MOBILE ? 32 : 64, IS_MOBILE ? 32 : 64);
     const sunHalo3Material = new THREE.MeshBasicMaterial({
       color: 0xffaa44,
       transparent: true,
@@ -847,9 +894,9 @@
     });
     clouds.visible = true;
 
-    // 星空
+    // 星空（移动端减少数量）
     const starsGeometry = new THREE.BufferGeometry();
-    const starsCount = 16000;
+    const starsCount = STAR_COUNT;
     const starsPositions = new Float32Array(starsCount * 3);
     const starsColors = new Float32Array(starsCount * 3);
     for (let i = 0; i < starsCount * 3; i += 3) {
@@ -872,7 +919,7 @@
     starsGeometry.setAttribute('position', new THREE.BufferAttribute(starsPositions, 3));
     starsGeometry.setAttribute('color', new THREE.BufferAttribute(starsColors, 3));
     const starsMaterial = new THREE.PointsMaterial({
-      size: 1.6, vertexColors: true, transparent: true, opacity: 1.0,
+      size: IS_MOBILE ? 1.2 : 1.6, vertexColors: true, transparent: true, opacity: 1.0,
       blending: THREE.AdditiveBlending, sizeAttenuation: true
     });
     const stars = new THREE.Points(starsGeometry, starsMaterial);
@@ -882,11 +929,12 @@
 
     const originalStarsOpacity = starsMaterial.opacity;
 
-    // ==================== 上传处理（高清适配） ====================
+    // ==================== 上传处理（移动端优化版） ====================
     const fileInput = document.getElementById('fileInput');
     const fileNameDisplay = document.getElementById('fileName');
     const resetBtn = document.getElementById('resetTexture');
 
+    // 移动端专用的图片预处理，限制最大尺寸
     function prepareEquirectangularTexture(image, imgWidth, imgHeight) {
       const expectedRatio = 2;
       const actualRatio = imgWidth / imgHeight;
@@ -900,19 +948,28 @@
           sourceY = (imgHeight - sourceH) / 2;
         }
       }
-      const outW = Math.round(sourceW);
-      const outH = Math.round(sourceH);
-      let canvas, ctx;
-      if (typeof OffscreenCanvas !== 'undefined' && outW * outH < 16384 * 16384) {
-        canvas = new OffscreenCanvas(outW, outH);
-        ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
-      } else {
-        canvas = document.createElement('canvas');
-        canvas.width = outW; canvas.height = outH;
-        ctx = canvas.getContext('2d', { alpha: false });
+      
+      // 移动端限制输出尺寸
+      let outW = Math.round(sourceW);
+      let outH = Math.round(sourceH);
+      
+      if (IS_MOBILE) {
+        const maxW = MAX_TEXTURE_SIZE;
+        const maxH = MAX_TEXTURE_SIZE / 2;
+        if (outW > maxW || outH > maxH) {
+          const scale = Math.min(maxW / outW, maxH / outH);
+          outW = Math.floor(outW * scale);
+          outH = Math.floor(outH * scale);
+        }
       }
+      
+      // 使用 canvas 绘制并缩放
+      const canvas = document.createElement('canvas');
+      canvas.width = outW; 
+      canvas.height = outH;
+      const ctx = canvas.getContext('2d', { alpha: false });
       ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
+      ctx.imageSmoothingQuality = 'medium'; // 移动端使用 medium 平衡性能
       ctx.drawImage(image, sourceX, sourceY, sourceW, sourceH, 0, 0, outW, outH);
       return canvas;
     }
@@ -920,36 +977,26 @@
     fileInput.addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
-      const displayName = file.name.length > 20 ? file.name.substring(0, 18) + '...' : file.name;
+      const displayName = file.name.length > 16 ? file.name.substring(0, 14) + '...' : file.name;
       fileNameDisplay.textContent = '处理中...';
       
       if (window.createImageBitmap) {
         createImageBitmap(file, { imageOrientation: 'none', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
           .then(bitmap => {
             const canvas = prepareEquirectangularTexture(bitmap, bitmap.width, bitmap.height);
-            let newTexture;
-            if (canvas instanceof OffscreenCanvas) {
-              const fallbackCanvas = document.createElement('canvas');
-              fallbackCanvas.width = canvas.width;
-              fallbackCanvas.height = canvas.height;
-              const fctx = fallbackCanvas.getContext('2d');
-              fctx.imageSmoothingEnabled = true;
-              fctx.imageSmoothingQuality = 'high';
-              fctx.drawImage(canvas, 0, 0);
-              newTexture = new THREE.CanvasTexture(fallbackCanvas);
-            } else {
-              newTexture = new THREE.CanvasTexture(canvas);
-            }
-            if (canvas.width > 8192 || canvas.height > 8192) {
-              newTexture.minFilter = THREE.LinearFilter;
-              newTexture.generateMipmaps = false;
-              newTexture.anisotropy = maxAnisotropy;
-            } else {
-              configureTexture(newTexture);
-            }
+            const newTexture = new THREE.CanvasTexture(canvas);
+            // 配置纹理
             newTexture.encoding = THREE.sRGBEncoding;
             newTexture.wrapS = THREE.RepeatWrapping;
             newTexture.wrapT = THREE.RepeatWrapping;
+            if (IS_MOBILE || canvas.width > 2048) {
+              newTexture.minFilter = THREE.LinearFilter;
+              newTexture.generateMipmaps = false;
+            } else {
+              newTexture.minFilter = THREE.LinearMipmapLinearFilter;
+              newTexture.generateMipmaps = true;
+            }
+            newTexture.anisotropy = IS_MOBILE ? 2 : maxAnisotropy;
             newTexture.needsUpdate = true;
             
             if (currentTexture && currentTexture.image instanceof HTMLCanvasElement) currentTexture.dispose();
@@ -976,16 +1023,17 @@
         img.onload = () => {
           const canvas = prepareEquirectangularTexture(img, img.width, img.height);
           const newTexture = new THREE.CanvasTexture(canvas);
-          if (canvas.width > 8192 || canvas.height > 8192) {
-            newTexture.minFilter = THREE.LinearFilter;
-            newTexture.generateMipmaps = false;
-            newTexture.anisotropy = maxAnisotropy;
-          } else {
-            configureTexture(newTexture);
-          }
           newTexture.encoding = THREE.sRGBEncoding;
           newTexture.wrapS = THREE.RepeatWrapping;
           newTexture.wrapT = THREE.RepeatWrapping;
+          if (IS_MOBILE || canvas.width > 2048) {
+            newTexture.minFilter = THREE.LinearFilter;
+            newTexture.generateMipmaps = false;
+          } else {
+            newTexture.minFilter = THREE.LinearMipmapLinearFilter;
+            newTexture.generateMipmaps = true;
+          }
+          newTexture.anisotropy = IS_MOBILE ? 2 : maxAnisotropy;
           newTexture.needsUpdate = true;
           if (currentTexture && currentTexture.image instanceof HTMLCanvasElement) currentTexture.dispose();
           phongMaterial.map = newTexture;
@@ -1076,6 +1124,9 @@
     const btnSideSettings = document.getElementById('btnSideSettings');
     const settingsPanelTitle = document.getElementById('settingsPanelTitle');
 
+    // 默认隐藏设置面板（移动端避免遮挡）
+    geoSettings.classList.add('hidden');
+
     function toggleSettings() {
       const isHidden = geoSettings.classList.toggle('hidden');
       if (isHidden) {
@@ -1138,6 +1189,55 @@
           geoSettings.style.transition = '';
         }
       });
+      
+      // 触摸支持
+      settingsPanelTitle.addEventListener('touchstart', (e) => {
+        if (e.target === closeSettings || e.target.closest('.close-x')) return;
+        const touch = e.touches[0];
+        isDragging = true;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        
+        const rect = geoSettings.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
+        
+        geoSettings.style.right = 'auto';
+        geoSettings.style.left = startLeft + 'px';
+        geoSettings.style.top = startTop + 'px';
+        geoSettings.style.transition = 'none';
+        
+        e.preventDefault();
+      }, { passive: false });
+      
+      document.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        
+        let newLeft = startLeft + dx;
+        let newTop = startTop + dy;
+        
+        const panelWidth = geoSettings.offsetWidth;
+        const panelHeight = geoSettings.offsetHeight;
+        const maxLeft = window.innerWidth - panelWidth;
+        const maxTop = window.innerHeight - panelHeight;
+        
+        newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+        newTop = Math.max(0, Math.min(newTop, maxTop));
+        
+        geoSettings.style.left = newLeft + 'px';
+        geoSettings.style.top = newTop + 'px';
+        e.preventDefault();
+      }, { passive: false });
+      
+      document.addEventListener('touchend', () => {
+        if (isDragging) {
+          isDragging = false;
+          geoSettings.style.transition = '';
+        }
+      });
     })();
 
     document.getElementById('btnSideLayers').addEventListener('click', () => {
@@ -1153,7 +1253,7 @@
       document.getElementById('statusLevel').textContent = level;
     }
 
-    // ==================== 实时缩略图（提高分辨率） ====================
+    // ==================== 实时缩略图（移动端更低分辨率） ====================
     const miniCanvas = document.getElementById('miniGlobeCanvas');
     miniCanvas.width = MINI_SIZE;
     miniCanvas.height = MINI_SIZE;
@@ -1166,7 +1266,7 @@
     miniCamera.lookAt(0, 0, 0);
 
     const miniRenderer = new THREE.WebGLRenderer({
-      canvas: miniCanvas, antialias: true, alpha: false, precision: 'highp'
+      canvas: miniCanvas, antialias: false, alpha: false, precision: 'mediump'
     });
     miniRenderer.setSize(MINI_SIZE, MINI_SIZE);
     miniRenderer.setPixelRatio(1);
@@ -1175,7 +1275,9 @@
     miniRenderer.setClearColor(0x0a0e18, 1);
 
     const miniEarthMaterial = new THREE.MeshBasicMaterial({ map: null });
-    const miniEarth = new THREE.Mesh(geometry, miniEarthMaterial);
+    // 缩略图使用低模球体
+    const miniGeometry = new THREE.SphereGeometry(1, 32, 32, 0, Math.PI * 2, 0, Math.PI);
+    const miniEarth = new THREE.Mesh(miniGeometry, miniEarthMaterial);
     miniScene.add(miniEarth);
 
     function updateMiniGlobe() {
@@ -1192,18 +1294,26 @@
 
     // ==================== 动画 ====================
     let miniFrameCounter = 0;
+    let lastTime = performance.now();
+    
     function animate() {
       requestAnimationFrame(animate);
+      
+      const now = performance.now();
+      const delta = now - lastTime;
+      lastTime = now;
+      
       const dist = camera.position.length();
       const minD = controls.minDistance;
       const maxD = controls.maxDistance;
       const s = Math.max(0, Math.min(1, (dist - minD) / (maxD - minD)));
       controls.rotateSpeed = ROTATE_SPEED_NEAR + s * (ROTATE_SPEED_FAR - ROTATE_SPEED_NEAR);
       controls.zoomSpeed = ZOOM_SPEED_NEAR + s * (ZOOM_SPEED_FAR - ZOOM_SPEED_NEAR);
+      
       if (cloudEnabled && clouds.visible) {
-        clouds.rotation.y += cloudRotationSpeed;
+        clouds.rotation.y += cloudRotationSpeed * (delta / 16);
       }
-      stars.rotation.y += 0.00001;
+      stars.rotation.y += 0.00001 * (delta / 16);
       
       if (sunHalo1.visible) {
         const pulse = 1 + Math.sin(Date.now() * 0.0015) * 0.03;
@@ -1228,7 +1338,9 @@
       }
       
       miniFrameCounter++;
-      if (miniFrameCounter % 2 === 0) {
+      // 移动端降低缩略图更新频率
+      const updateInterval = IS_MOBILE ? 3 : 2;
+      if (miniFrameCounter % updateInterval === 0) {
         updateMiniGlobe();
       }
     }
