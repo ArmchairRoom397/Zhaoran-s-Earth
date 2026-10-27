@@ -14,6 +14,39 @@
     }
     canvas { display: block; }
 
+    /* ===== 加载遮罩 ===== */
+    #loadingOverlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: radial-gradient(circle at 50% 45%, #0a1220 0%, #000005 70%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 22px;
+      transition: opacity 0.6s ease;
+    }
+    #loadingOverlay.fade-out { opacity: 0; pointer-events: none; }
+    #loadingOverlay .loader-globe {
+      width: 84px; height: 84px; border-radius: 50%;
+      border: 3px solid rgba(74,158,255,0.18);
+      border-top-color: #4a9eff;
+      animation: spin 1s linear infinite;
+      position: relative;
+    }
+    #loadingOverlay .loader-globe::after {
+      content: ''; position: absolute; inset: 10px;
+      border-radius: 50%;
+      border: 2px solid rgba(74,158,255,0.12);
+      border-bottom-color: rgba(74,158,255,0.6);
+      animation: spin 1.6s linear infinite reverse;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loadingOverlay .loader-text {
+      font-size: 14px; color: #9aaec9; letter-spacing: 1px;
+    }
+    #loadingOverlay .loader-sub {
+      font-size: 11px; color: #55688a; letter-spacing: 0.5px;
+      margin-top: -14px;
+    }
+
     .geo-sidebar {
       position: absolute; top: 0; left: 0;
       width: 56px; height: 100vh;
@@ -252,7 +285,6 @@
       max-width: 260px; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
       transition: opacity 0.3s ease;
-      display: none;
     }
     .gpu-mini.hidden { opacity: 0; }
 
@@ -272,6 +304,13 @@
 </head>
 <body>
 
+  <!-- ===== 加载遮罩 ===== -->
+  <div id="loadingOverlay">
+    <div class="loader-globe"></div>
+    <div class="loader-text">正在构建地球…</div>
+    <div class="loader-sub" id="loadingSub">初始化渲染引擎</div>
+  </div>
+
   <aside class="geo-sidebar" id="geoSidebar">
     <div class="logo">🌍</div>
     <button class="side-btn" id="btnSideLayers" title="上传地图">
@@ -288,7 +327,7 @@
     <span>Zhaoran's Earth</span>
   </div>
 
-  <div class="gpu-mini" id="gpuBadge">⚡ GPU 加速已启用</div>
+  <div class="gpu-mini" id="gpuBadge">⚡ WebGL 已启用</div>
 
   <div class="geo-settings" id="geoSettings">
     <div class="panel-title" id="settingsPanelTitle">
@@ -328,16 +367,6 @@
           <span class="row-label">🕐 时间</span>
           <input type="range" id="sunHour" min="0" max="24" step="0.25" value="12">
           <span class="row-value" id="sunHourVal">12:00</span>
-        </div>
-        <div class="setting-row">
-          <span class="row-label">💡 亮度</span>
-          <input type="range" id="lightIntensity" min="0" max="2.5" step="0.05" value="1.0">
-          <span class="row-value" id="lightIntensityVal">1.00</span>
-        </div>
-        <div class="setting-row">
-          <span class="row-label">🌟 泛光</span>
-          <input type="range" id="bloomStrength" min="0" max="1.5" step="0.02" value="0.55">
-          <span class="row-value" id="bloomStrengthVal">0.55</span>
         </div>
       </div>
 
@@ -397,21 +426,40 @@
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-    import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 
     // ==================== 配置 ====================
     const IS_MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    
-    const MAX_TEXTURE_SIZE = 16384;
-    const MAX_TEXTURE_HEIGHT = 8192;
-    
-    const SPHERE_SEGMENTS = IS_MOBILE ? 1024 : 2048;
-    const SUPERSAMPLE_FACTOR = IS_MOBILE ? 1.2 : 1.5;
-    const MINI_SIZE = IS_MOBILE ? 192 : 256;
+
+    // 移动端下调纹理上限，防 OOM
+    const MAX_TEXTURE_SIZE = IS_MOBILE ? 8192 : 16384;
+    const MAX_TEXTURE_HEIGHT = IS_MOBILE ? 4096 : 8192;
+
+    const SPHERE_SEGMENTS_W = IS_MOBILE ? 96 : 128;
+    const SPHERE_SEGMENTS_H = IS_MOBILE ? 48 : 64;
+
+    const MAX_PIXEL_RATIO = IS_MOBILE ? 1.5 : 2;
+
+    // ==================== 加载遮罩 ====================
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const loadingSub = document.getElementById('loadingSub');
+    const LOADING_MIN_MS = 1000;
+    const loadingStartTime = performance.now();
+    let loadingDone = false;
+
+    const minDelay = new Promise(res => setTimeout(res, LOADING_MIN_MS));
+    let resolveResources = null;
+    const resourcesReady = new Promise(res => { resolveResources = res; });
+
+    function updateLoadingSub(text) { loadingSub.textContent = text; }
+
+    async function finishLoading() {
+      if (loadingDone) return;
+      loadingDone = true;
+      updateLoadingSub('就绪');
+      await Promise.all([minDelay, resourcesReady]);
+      loadingOverlay.classList.add('fade-out');
+      setTimeout(() => { loadingOverlay.remove(); }, 700);
+    }
 
     // ==================== 场景基础 ====================
     const scene = new THREE.Scene();
@@ -422,39 +470,30 @@
 
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl2', {
-      antialias: false, alpha: false, depth: true, stencil: false,
+      antialias: true, alpha: false, depth: true, stencil: false,
       preserveDrawingBuffer: false, powerPreference: "high-performance",
       failIfMajorPerformanceCaveat: false, desynchronized: true
-    });
+    }) || canvas.getContext('webgl', { antialias: true, alpha: false, depth: true });
 
     const renderer = new THREE.WebGLRenderer({
-      canvas: canvas, context: gl, antialias: false,
+      canvas: canvas, context: gl, antialias: true,
       powerPreference: "high-performance", logarithmicDepthBuffer: false, precision: "highp"
     });
 
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
 
     function resizeRenderer() {
-      const baseWidth = window.innerWidth;
-      const baseHeight = window.innerHeight;
-      const renderWidth = Math.floor(baseWidth * SUPERSAMPLE_FACTOR);
-      const renderHeight = Math.floor(baseHeight * SUPERSAMPLE_FACTOR);
-      const canvas = renderer.domElement;
-      canvas.width = renderWidth;
-      canvas.height = renderHeight;
-      canvas.style.width = baseWidth + 'px';
-      canvas.style.height = baseHeight + 'px';
-      renderer.setPixelRatio(1);
-      camera.aspect = baseWidth / baseHeight;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
+      renderer.setSize(w, h, false);
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      if (composer) {
-        composer.setSize(baseWidth, baseHeight);
-      }
-      if (fxaaPass) {
-        const pixelRatio = renderer.getPixelRatio();
-        fxaaPass.material.uniforms['resolution'].value.x = 1 / (baseWidth * pixelRatio);
-        fxaaPass.material.uniforms['resolution'].value.y = 1 / (baseHeight * pixelRatio);
-      }
     }
 
     renderer.outputEncoding = THREE.sRGBEncoding;
@@ -466,39 +505,15 @@
     const glContext = renderer.getContext();
     const debugInfo = glContext.getExtension('WEBGL_debug_renderer_info');
     if (debugInfo) {
-      const gpuName = glContext.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-      gpuBadge.textContent = `⚡ GPU · ${gpuName.length > 26 ? gpuName.substring(0,24)+'…' : gpuName}`;
+      try {
+        const gpuName = glContext.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+        if (gpuName && typeof gpuName === 'string') {
+          gpuBadge.textContent = `⚡ GPU · ${gpuName.length > 26 ? gpuName.substring(0,24)+'…' : gpuName}`;
+        }
+      } catch (e) { /* 某些浏览器禁止读取，保留默认文案 */ }
     }
 
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-
-    // ==================== 后处理 ====================
-    let composer = null;
-    let bloomPass = null;
-    let fxaaPass = null;
-    let usePostProcessing = false;
-
-    function initPostProcessing() {
-      const renderScene = new RenderPass(scene, camera);
-      bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.55, 0.75, 0.0
-      );
-      bloomPass.threshold = 0.0;
-      bloomPass.strength = 0.55;
-      bloomPass.radius = 0.75;
-
-      composer = new EffectComposer(renderer);
-      composer.addPass(renderScene);
-      composer.addPass(bloomPass);
-
-      fxaaPass = new ShaderPass(FXAAShader);
-      const pixelRatio = renderer.getPixelRatio();
-      fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
-      fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
-      composer.addPass(fxaaPass);
-    }
-    initPostProcessing();
 
     // ==================== 控制器 ====================
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -517,8 +532,34 @@
     const ZOOM_SPEED_NEAR = 0.3;
     const ZOOM_SPEED_FAR = 1.2;
 
+    // ==================== 纹理管理器 ====================
+    const textureManager = {
+      current: null,
+      set(tex) {
+        if (tex === this.current) return;
+        const old = this.current;
+        this.current = tex;
+        phongMaterial.map = tex;
+        phongMaterial.needsUpdate = true;
+        basicMaterial.map = tex;
+        basicMaterial.color.setHex(tex ? 0xffffff : 0x1a3a6a);
+        basicMaterial.needsUpdate = true;
+        miniEarthMaterial.map = tex;
+        miniEarthMaterial.color.setHex(tex ? 0xffffff : 0x1a3a6a);
+        miniEarthMaterial.needsUpdate = true;
+        miniDirty = true; // 纹理变化时刷新小地球
+        if (old && old !== tex) {
+          try { old.dispose(); } catch (e) {}
+        }
+      }
+    };
+
     // ==================== 地球几何体 ====================
-    const geometry = new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_SEGMENTS, 0, Math.PI * 2, 0, Math.PI);
+    const geometry = new THREE.SphereGeometry(
+      1,
+      SPHERE_SEGMENTS_W, SPHERE_SEGMENTS_H,
+      0, Math.PI * 2, 0, Math.PI
+    );
 
     const TEXTURE_URLS = [
       'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg',
@@ -535,38 +576,30 @@
       emissive: new THREE.Color(0x000000)
     });
 
-    const basicMaterial = new THREE.MeshBasicMaterial({ 
+    const basicMaterial = new THREE.MeshBasicMaterial({
       map: null,
       color: 0x1a3a6a
     });
 
     let currentMaterial = basicMaterial;
-    let currentTexture = null;
 
-    // ==================== 关键修复：保持高清不降质 ====================
-    // 核心改动：始终开启 Mipmap + 三线性过滤 + 高各向异性
-    // 这样放大时用原图高清，缩小时用 Mipmap 平滑过渡，而不是强制降采样
-    function configureTexture(tex) {
+    // 兼容层：外部若有代码读写 currentTexture，统一走 textureManager
+    Object.defineProperty(window, 'currentTexture', {
+      get: () => textureManager.current,
+      set: (v) => { textureManager.set(v); }
+    });
+
+    function configureTexture(tex, opts = {}) {
       if (!tex) return;
-      
       tex.encoding = THREE.sRGBEncoding;
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
-      
-      // 关键：始终保持 Mipmap 和三线性过滤
-      // 这样缩小时使用预生成的 Mipmap，画质平滑不闪烁
-      // 放大时使用 Mipmap level 0（原图高清）
-      tex.minFilter = THREE.LinearMipmapLinearFilter;  // 三线性过滤
-      tex.magFilter = THREE.LinearFilter;              // 放大时线性过滤
-      tex.generateMipmaps = true;                      // 始终生成 Mipmap
-      
-      // 最大各向异性过滤，斜视时纹理更清晰
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = true;
       tex.anisotropy = maxAnisotropy;
-      
-      // 不预乘 alpha（避免颜色偏差）
       tex.premultiplyAlpha = false;
       tex.unpackAlignment = 1;
-      
       tex.needsUpdate = true;
       return tex;
     }
@@ -576,130 +609,66 @@
         if (onFail) onFail();
         return;
       }
-      
-      console.log(`尝试加载纹理 [${index}]: ${urls[index]}`);
-      
       textureLoader.load(
         urls[index],
         (tex) => {
-          console.log(`✅ 纹理加载成功 (${tex.image.width}×${tex.image.height})`);
           configureTexture(tex);
           if (onSuccess) onSuccess(tex);
         },
         undefined,
-        (err) => {
-          console.warn(`❌ 纹理加载失败 [${index}]`);
-          loadTextureWithFallback(urls, onSuccess, onFail, index + 1);
-        }
+        () => { loadTextureWithFallback(urls, onSuccess, onFail, index + 1); }
       );
     }
 
-    loadTextureWithFallback(
-      TEXTURE_URLS,
-      (tex) => {
-        currentTexture = tex;
-        phongMaterial.map = tex;
-        phongMaterial.needsUpdate = true;
-        basicMaterial.map = tex;
-        basicMaterial.color.setHex(0xffffff);
-        basicMaterial.needsUpdate = true;
-      },
-      () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1024;
-        canvas.height = 512;
-        const ctx = canvas.getContext('2d');
-        const grad = ctx.createLinearGradient(0, 0, 0, 512);
-        grad.addColorStop(0, '#1a3a6a');
-        grad.addColorStop(0.5, '#2a6fa6');
-        grad.addColorStop(1, '#1a3a6a');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 1024, 512);
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= 8; i++) {
-          ctx.beginPath(); ctx.moveTo(0, i * 64); ctx.lineTo(1024, i * 64); ctx.stroke();
-        }
-        for (let i = 0; i <= 16; i++) {
-          ctx.beginPath(); ctx.moveTo(i * 64, 0); ctx.lineTo(i * 64, 512); ctx.stroke();
-        }
-        const tex = new THREE.CanvasTexture(canvas);
-        configureTexture(tex);
-        currentTexture = tex;
-        basicMaterial.map = tex;
-        basicMaterial.color.setHex(0xffffff);
-        basicMaterial.needsUpdate = true;
-      }
-    );
-
-    const earth = new THREE.Mesh(geometry, currentMaterial);
-    scene.add(earth);
-
     // ==================== 云层 ====================
-    const cloudGeometry = new THREE.SphereGeometry(1.012, IS_MOBILE ? 512 : 1024, IS_MOBILE ? 512 : 1024, 0, Math.PI * 2, 0, Math.PI);
-    
+    const cloudGeometry = new THREE.SphereGeometry(
+      1.012,
+      IS_MOBILE ? 96 : 128,
+      IS_MOBILE ? 48 : 64,
+      0, Math.PI * 2, 0, Math.PI
+    );
     const CLOUD_TEXTURE_URLS = [
       'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_clouds_1024.png',
       'https://threejs.org/examples/textures/planets/earth_clouds_1024.png'
     ];
 
     const cloudMaterialPhong = new THREE.MeshPhongMaterial({
-      map: null,
-      transparent: true,
-      opacity: 0.6,
-      alphaTest: 0.01,
-      blending: THREE.NormalBlending,
-      depthWrite: false,
-      side: THREE.FrontSide,
-      emissive: new THREE.Color(0x000000),
-      shininess: 1,
-      specular: new THREE.Color(0x000000)
+      map: null, transparent: true, opacity: 0.6, alphaTest: 0.01,
+      blending: THREE.NormalBlending, depthWrite: false, side: THREE.FrontSide,
+      emissive: new THREE.Color(0x000000), shininess: 1, specular: new THREE.Color(0x000000)
     });
 
     const cloudMaterialBasic = new THREE.MeshBasicMaterial({
-      map: null,
-      transparent: true,
-      opacity: 0.6,
-      alphaTest: 0.01,
-      blending: THREE.NormalBlending,
-      depthWrite: false,
-      side: THREE.FrontSide,
-      color: 0xffffff
+      map: null, transparent: true, opacity: 0.6, alphaTest: 0.01,
+      blending: THREE.NormalBlending, depthWrite: false, side: THREE.FrontSide, color: 0xffffff
     });
 
     const clouds = new THREE.Mesh(cloudGeometry, cloudMaterialBasic);
     scene.add(clouds);
 
     let cloudEnabled = true;
-    let currentCloudTexture = null;
 
-    function applyCloudTexture(tex) {
-      currentCloudTexture = tex;
-      cloudMaterialPhong.map = tex;
-      cloudMaterialPhong.needsUpdate = true;
-      cloudMaterialBasic.map = tex;
-      cloudMaterialBasic.needsUpdate = true;
-    }
-
-    function loadCloudTexture(urlIndex = 0) {
-      if (urlIndex >= CLOUD_TEXTURE_URLS.length) return;
-      
+    // 云纹理：两材质共享同一对象，替换时只 dispose 一次（简化版）
+    function loadCloudTexture(urlIndex = 0, retriesLeft = 2) {
+      if (urlIndex >= CLOUD_TEXTURE_URLS.length) {
+        if (retriesLeft > 0) {
+          setTimeout(() => loadCloudTexture(0, retriesLeft - 1), 800);
+        } else {
+          updateLoadingSub('云层加载失败，不影响使用');
+        }
+        return;
+      }
       const loader = new THREE.TextureLoader();
       loader.setCrossOrigin('anonymous');
       loader.load(CLOUD_TEXTURE_URLS[urlIndex], (tex) => {
-        tex.encoding = THREE.sRGBEncoding;
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        // 云层同样开启 Mipmap 保持缩小时画质
-        tex.minFilter = THREE.LinearMipmapLinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.generateMipmaps = true;
-        tex.premultiplyAlpha = false;
-        tex.anisotropy = maxAnisotropy;
-        tex.needsUpdate = true;
-        applyCloudTexture(tex);
-      }, undefined, () => {
-        loadCloudTexture(urlIndex + 1);
-      });
+        configureTexture(tex);
+        const old = cloudMaterialPhong.map;
+        cloudMaterialPhong.map = tex;
+        cloudMaterialPhong.needsUpdate = true;
+        cloudMaterialBasic.map = tex;
+        cloudMaterialBasic.needsUpdate = true;
+        if (old && old !== tex) { try { old.dispose(); } catch (e) {} }
+      }, undefined, () => { loadCloudTexture(urlIndex + 1, retriesLeft); });
     }
     loadCloudTexture();
 
@@ -710,6 +679,8 @@
     scene.add(dirLight);
     ambientLight.visible = false;
     dirLight.visible = false;
+
+    const BASE_LIGHT_INTENSITY = 1.5;
 
     // ==================== 太阳 ====================
     const SUN_DISTANCE = 500;
@@ -749,7 +720,7 @@
       sunObjects.forEach(obj => { obj.visible = visible; });
     }
 
-    let sunMonth = 6, sunHour = 12, baseLightIntensity = 1.0;
+    let sunMonth = 6, sunHour = 12;
 
     function updateSunPosition() {
       const declination = 23.44 * Math.sin(((sunMonth - 3) / 12) * Math.PI * 2);
@@ -759,56 +730,28 @@
       const x = Math.cos(elRad) * Math.cos(azRad);
       const y = Math.sin(elRad);
       const z = Math.cos(elRad) * Math.sin(azRad);
-      
+
       const distLight = 8;
       dirLight.position.set(x * distLight, y * distLight, z * distLight);
       dirLight.target.position.set(0, 0, 0);
       dirLight.target.updateMatrixWorld();
-      
+
       const sunPos = new THREE.Vector3(x, y, z).multiplyScalar(SUN_DISTANCE);
       sunObjects.forEach(obj => obj.position.copy(sunPos));
     }
 
-    const sunMonthSlider = document.getElementById('sunMonth');
-    const sunMonthVal = document.getElementById('sunMonthVal');
-    const sunHourSlider = document.getElementById('sunHour');
-    const sunHourVal = document.getElementById('sunHourVal');
-    const lightIntensitySlider = document.getElementById('lightIntensity');
-    const lightIntensityVal = document.getElementById('lightIntensityVal');
-    const bloomStrengthSlider = document.getElementById('bloomStrength');
-    const bloomStrengthVal = document.getElementById('bloomStrengthVal');
-
-    sunMonthSlider.addEventListener('input', (e) => {
+    document.getElementById('sunMonth').addEventListener('input', (e) => {
       sunMonth = parseFloat(e.target.value);
-      sunMonthVal.textContent = sunMonth + '月';
+      document.getElementById('sunMonthVal').textContent = sunMonth + '月';
       updateSunPosition();
     });
-    sunHourSlider.addEventListener('input', (e) => {
+    document.getElementById('sunHour').addEventListener('input', (e) => {
       sunHour = parseFloat(e.target.value);
       const h = Math.floor(sunHour);
       const m = Math.round((sunHour - h) * 60);
-      sunHourVal.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+      document.getElementById('sunHourVal').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
       updateSunPosition();
     });
-    lightIntensitySlider.addEventListener('input', (e) => {
-      baseLightIntensity = parseFloat(e.target.value);
-      lightIntensityVal.textContent = baseLightIntensity.toFixed(2);
-      applyLightIntensity();
-    });
-    bloomStrengthSlider.addEventListener('input', (e) => {
-      const val = parseFloat(e.target.value);
-      bloomStrengthVal.textContent = val.toFixed(2);
-      if (bloomPass && lightMode === 'sun') {
-        bloomPass.strength = val;
-      }
-    });
-
-    function applyLightIntensity() {
-      if (lightMode === 'sun') {
-        dirLight.intensity = 0.8 * baseLightIntensity;
-        ambientLight.intensity = 0.08 * baseLightIntensity;
-      }
-    }
 
     let lightMode = 'global';
     function setLightMode(mode) {
@@ -820,7 +763,6 @@
         ambientLight.visible = false;
         dirLight.visible = false;
         setSunVisible(false);
-        usePostProcessing = false;
         document.getElementById('btnLightGlobal').classList.add('active');
         document.getElementById('btnLightSun').classList.remove('active');
       } else {
@@ -828,52 +770,40 @@
         currentMaterial = phongMaterial;
         clouds.material = cloudMaterialPhong;
         ambientLight.visible = true;
-        ambientLight.intensity = 0.08 * baseLightIntensity;
+        dirLight.intensity = 0.65 * BASE_LIGHT_INTENSITY;
+        ambientLight.intensity = 0.12 * BASE_LIGHT_INTENSITY;
         dirLight.visible = true;
-        dirLight.intensity = 0.8 * baseLightIntensity;
         setSunVisible(true);
-        usePostProcessing = true;
-        if (bloomPass) {
-          bloomPass.strength = parseFloat(bloomStrengthSlider.value);
-        }
         document.getElementById('btnLightGlobal').classList.remove('active');
         document.getElementById('btnLightSun').classList.add('active');
       }
       updateSunPosition();
+      miniDirty = true;
     }
     document.getElementById('btnLightGlobal').addEventListener('click', () => setLightMode('global'));
     document.getElementById('btnLightSun').addEventListener('click', () => setLightMode('sun'));
-    setLightMode('global');
-    updateSunPosition();
 
     // 云层控制
-    const cloudOnBtn = document.getElementById('cloudOn');
-    const cloudOffBtn = document.getElementById('cloudOff');
-    const cloudSpeedSlider = document.getElementById('cloudSpeed');
-    const cloudSpeedVal = document.getElementById('cloudSpeedVal');
-
-    cloudOnBtn.addEventListener('click', () => {
+    document.getElementById('cloudOn').addEventListener('click', () => {
       cloudEnabled = true; clouds.visible = true;
-      cloudOnBtn.classList.add('active');
-      cloudOffBtn.classList.remove('active');
+      document.getElementById('cloudOn').classList.add('active');
+      document.getElementById('cloudOff').classList.remove('active');
     });
-    cloudOffBtn.addEventListener('click', () => {
+    document.getElementById('cloudOff').addEventListener('click', () => {
       cloudEnabled = false; clouds.visible = false;
-      cloudOffBtn.classList.add('active');
-      cloudOnBtn.classList.remove('active');
+      document.getElementById('cloudOff').classList.add('active');
+      document.getElementById('cloudOn').classList.remove('active');
     });
     let cloudRotationSpeed = 0.0005;
-    cloudSpeedSlider.addEventListener('input', (e) => {
+    document.getElementById('cloudSpeed').addEventListener('input', (e) => {
       cloudRotationSpeed = parseFloat(e.target.value);
-      cloudSpeedVal.textContent = (cloudRotationSpeed * 1000).toFixed(1);
+      document.getElementById('cloudSpeedVal').textContent = (cloudRotationSpeed * 1000).toFixed(1);
     });
     clouds.visible = true;
 
-    const cloudOpacitySlider = document.getElementById('cloudOpacity');
-    const cloudOpacityVal = document.getElementById('cloudOpacityVal');
-    cloudOpacitySlider.addEventListener('input', (e) => {
+    document.getElementById('cloudOpacity').addEventListener('input', (e) => {
       const val = parseFloat(e.target.value);
-      cloudOpacityVal.textContent = val.toFixed(2);
+      document.getElementById('cloudOpacityVal').textContent = val.toFixed(2);
       cloudMaterialPhong.opacity = val;
       cloudMaterialBasic.opacity = val;
       cloudMaterialPhong.needsUpdate = true;
@@ -893,10 +823,10 @@
       starsPositions[i + 1] = Math.sin(phi) * Math.sin(theta) * r;
       starsPositions[i + 2] = Math.cos(phi) * r;
       const colorVal = 0.75 + Math.random() * 0.25;
-      const colorChoice = Math.random();
-      if (colorChoice < 0.7) {
+      const choice = Math.random();
+      if (choice < 0.7) {
         starsColors[i] = colorVal; starsColors[i+1] = colorVal * 0.95; starsColors[i+2] = colorVal;
-      } else if (colorChoice < 0.85) {
+      } else if (choice < 0.85) {
         starsColors[i] = colorVal * 0.9; starsColors[i+1] = colorVal * 0.9; starsColors[i+2] = colorVal;
       } else {
         starsColors[i] = colorVal; starsColors[i+1] = colorVal * 0.9; starsColors[i+2] = colorVal * 0.7;
@@ -915,7 +845,72 @@
 
     const originalStarsOpacity = starsMaterial.opacity;
 
-    // ==================== 上传处理（高清不降质） ====================
+    // ==================== 地球实例 ====================
+    const earth = new THREE.Mesh(geometry, currentMaterial);
+    scene.add(earth);
+
+    // ==================== 小地球渲染器 ====================
+    const miniCanvas = document.getElementById('miniGlobeCanvas');
+    const RENDER_SIZE = 276;
+    miniCanvas.width = RENDER_SIZE;
+    miniCanvas.height = RENDER_SIZE;
+
+    const miniScene = new THREE.Scene();
+    miniScene.background = null;
+    const MINI_CAMERA_DISTANCE = 5.00;
+    const MINI_CAMERA_FOV = 62;
+    const miniCamera = new THREE.PerspectiveCamera(MINI_CAMERA_FOV, 1, 0.1, 20);
+    const miniRenderer = new THREE.WebGLRenderer({
+      canvas: miniCanvas, antialias: true, alpha: true, precision: 'highp'
+    });
+    miniRenderer.setSize(RENDER_SIZE, RENDER_SIZE);
+    miniRenderer.setPixelRatio(1);
+    miniRenderer.outputEncoding = THREE.sRGBEncoding;
+    miniRenderer.toneMapping = THREE.NoToneMapping;
+    miniRenderer.setClearColor(0x000000, 0);
+
+    const miniEarthMaterial = new THREE.MeshBasicMaterial({ map: null, color: 0x1a3a6a });
+    const miniEarth = new THREE.Mesh(geometry, miniEarthMaterial);
+    miniScene.add(miniEarth);
+    const miniAmbient = new THREE.AmbientLight(0xffffff, 1.0);
+    miniScene.add(miniAmbient);
+
+    // ==================== 小地球脏标记与节流状态 ====================
+    // 相机姿态变化时置脏；纹理/光照变化时也置脏。节流按时间而非帧数。
+    let miniDirty = true;
+    const MINI_TARGET_INTERVAL = 1 / 30; // 30fps 上限
+    let miniAccum = 0;
+
+    controls.addEventListener('change', () => { miniDirty = true; });
+
+    // ==================== 加载主纹理 ====================
+    loadTextureWithFallback(
+      TEXTURE_URLS,
+      (tex) => {
+        textureManager.set(tex);
+        updateLoadingSub('主纹理已就绪');
+        resolveResources();
+      },
+      () => {
+        // 网络失败：生成渐变占位纹理
+        const cv = document.createElement('canvas');
+        cv.width = 1024; cv.height = 512;
+        const ctx = cv.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, 512);
+        grad.addColorStop(0, '#1a3a6a');
+        grad.addColorStop(0.5, '#2a6fa6');
+        grad.addColorStop(1, '#1a3a6a');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 1024, 512);
+        const tex = new THREE.CanvasTexture(cv);
+        configureTexture(tex);
+        textureManager.set(tex);
+        updateLoadingSub('使用占位纹理');
+        resolveResources();
+      }
+    );
+
+    // ==================== 上传处理 ====================
     const fileInput = document.getElementById('fileInput');
     const fileNameDisplay = document.getElementById('fileName');
     const resetBtn = document.getElementById('resetTexture');
@@ -924,7 +919,6 @@
       const expectedRatio = 2;
       const actualRatio = imgWidth / imgHeight;
       let sourceX = 0, sourceY = 0, sourceW = imgWidth, sourceH = imgHeight;
-      
       if (Math.abs(actualRatio - expectedRatio) > 0.01) {
         if (actualRatio > expectedRatio) {
           sourceW = imgHeight * expectedRatio;
@@ -934,121 +928,80 @@
           sourceY = (imgHeight - sourceH) / 2;
         }
       }
-      
       let outW = Math.round(sourceW);
       let outH = Math.round(sourceH);
-      
-      // 只裁剪到 16384×8192 上限，不做额外降采样
       if (outW > MAX_TEXTURE_SIZE || outH > MAX_TEXTURE_HEIGHT) {
         const scale = Math.min(MAX_TEXTURE_SIZE / outW, MAX_TEXTURE_HEIGHT / outH);
         outW = Math.floor(outW * scale);
         outH = Math.floor(outH * scale);
       }
-      
-      console.log(`纹理输出尺寸: ${outW}×${outH}`);
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = outW;
-      canvas.height = outH;
-      const ctx = canvas.getContext('2d', { alpha: false });
+      const cv = document.createElement('canvas');
+      cv.width = outW;
+      cv.height = outH;
+      const ctx = cv.getContext('2d', { alpha: false });
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(image, sourceX, sourceY, sourceW, sourceH, 0, 0, outW, outH);
-      
-      return canvas;
+      return cv;
+    }
+
+    function processImageSource(source, w, h, displayName) {
+      try {
+        const cv = prepareEquirectangularTexture(source, w, h);
+        const newTexture = new THREE.CanvasTexture(cv);
+        configureTexture(newTexture);
+        newTexture.encoding = THREE.sRGBEncoding;
+        newTexture.needsUpdate = true;
+        textureManager.set(newTexture);
+        fileNameDisplay.textContent = displayName;
+      } catch (err) {
+        console.error('纹理处理失败', err);
+        fileNameDisplay.textContent = '处理失败，请重试';
+      }
     }
 
     fileInput.addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
-      
       const displayName = file.name.length > 20 ? file.name.substring(0, 18) + '...' : file.name;
       fileNameDisplay.textContent = '处理中...';
-      
+
       if (window.createImageBitmap) {
-        createImageBitmap(file, { 
-          imageOrientation: 'none', 
-          premultiplyAlpha: 'none', 
-          colorSpaceConversion: 'none' 
-        })
-        .then(bitmap => {
-          const canvas = prepareEquirectangularTexture(bitmap, bitmap.width, bitmap.height);
-          const newTexture = new THREE.CanvasTexture(canvas);
-          configureTexture(newTexture);
-          newTexture.encoding = THREE.sRGBEncoding;
-          newTexture.needsUpdate = true;
-          
-          if (currentTexture && currentTexture.image instanceof HTMLCanvasElement) {
-            currentTexture.dispose();
-          }
-          
-          phongMaterial.map = newTexture;
-          phongMaterial.needsUpdate = true;
-          basicMaterial.map = newTexture;
-          basicMaterial.color.setHex(0xffffff);
-          basicMaterial.needsUpdate = true;
-          currentTexture = newTexture;
-          
-          fileNameDisplay.textContent = displayName;
-          console.log(`✅ 自定义纹理已应用: ${canvas.width}×${canvas.height}`);
-          
-          bitmap.close();
-        })
-        .catch(err => {
-          console.warn('createImageBitmap 失败，回退到 FileReader', err);
-          loadViaFileReader(file, displayName);
-        });
+        createImageBitmap(file, { imageOrientation: 'none', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+          .then(bitmap => {
+            processImageSource(bitmap, bitmap.width, bitmap.height, displayName);
+            bitmap.close();
+          })
+          .catch(() => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const img = new Image();
+              img.onload = () => processImageSource(img, img.width, img.height, displayName);
+              img.onerror = () => { fileNameDisplay.textContent = '图片解码失败'; };
+              img.src = e.target.result;
+            };
+            reader.onerror = () => { fileNameDisplay.textContent = '文件读取失败'; };
+            reader.readAsDataURL(file);
+          });
       } else {
-        loadViaFileReader(file, displayName);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => processImageSource(img, img.width, img.height, displayName);
+          img.onerror = () => { fileNameDisplay.textContent = '图片解码失败'; };
+          img.src = e.target.result;
+        };
+        reader.onerror = () => { fileNameDisplay.textContent = '文件读取失败'; };
+        reader.readAsDataURL(file);
       }
     });
-
-    function loadViaFileReader(file, displayName) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = prepareEquirectangularTexture(img, img.width, img.height);
-          const newTexture = new THREE.CanvasTexture(canvas);
-          configureTexture(newTexture);
-          newTexture.encoding = THREE.sRGBEncoding;
-          newTexture.needsUpdate = true;
-          
-          if (currentTexture && currentTexture.image instanceof HTMLCanvasElement) {
-            currentTexture.dispose();
-          }
-          
-          phongMaterial.map = newTexture;
-          phongMaterial.needsUpdate = true;
-          basicMaterial.map = newTexture;
-          basicMaterial.color.setHex(0xffffff);
-          basicMaterial.needsUpdate = true;
-          currentTexture = newTexture;
-          
-          fileNameDisplay.textContent = displayName;
-          console.log(`✅ 自定义纹理已应用: ${canvas.width}×${canvas.height}`);
-        };
-        img.onerror = () => { fileNameDisplay.textContent = '图片加载失败'; };
-        img.src = e.target.result;
-        fileNameDisplay.textContent = '处理中...';
-      };
-      reader.readAsDataURL(file);
-    }
 
     resetBtn.addEventListener('click', () => {
       fileNameDisplay.textContent = '加载中...';
       loadTextureWithFallback(
         TEXTURE_URLS,
         (tex) => {
-          if (currentTexture && currentTexture.image instanceof HTMLCanvasElement) {
-            currentTexture.dispose();
-          }
-          phongMaterial.map = tex;
-          phongMaterial.needsUpdate = true;
-          basicMaterial.map = tex;
-          basicMaterial.color.setHex(0xffffff);
-          basicMaterial.needsUpdate = true;
-          currentTexture = tex;
+          textureManager.set(tex);
           fileInput.value = '';
           fileNameDisplay.textContent = '未选择文件';
         },
@@ -1064,13 +1017,17 @@
     const miniGlobe = document.getElementById('miniGlobe');
 
     let autoRotateEnabled = false;
-
     const LON_OFFSET = 145;
     const TARGET_LAT = 35;
     const TARGET_LON = 105;
     const VIEW_DISTANCE = 3.5;
 
     function resetView() {
+      if (autoRotateEnabled) {
+        autoRotateEnabled = false;
+        controls.autoRotate = false;
+        btnAutoRotate.classList.remove('active');
+      }
       const latRad = THREE.MathUtils.degToRad(TARGET_LAT);
       const lonRad = THREE.MathUtils.degToRad(TARGET_LON + LON_OFFSET);
       const x = Math.cos(latRad) * Math.cos(lonRad) * VIEW_DISTANCE;
@@ -1079,8 +1036,8 @@
       camera.position.set(x, y, z);
       controls.target.set(0, 0, 0);
       controls.update();
+      miniDirty = true;
     }
-
     resetView();
 
     btnResetView.addEventListener('click', resetView);
@@ -1114,11 +1071,8 @@
 
     function toggleSettings() {
       const isHidden = geoSettings.classList.toggle('hidden');
-      if (isHidden) {
-        gpuBadge.classList.add('hidden');
-      } else {
-        gpuBadge.classList.remove('hidden');
-      }
+      if (isHidden) gpuBadge.classList.add('hidden');
+      else gpuBadge.classList.remove('hidden');
     }
     closeSettings.addEventListener('click', toggleSettings);
     btnSideSettings.addEventListener('click', toggleSettings);
@@ -1131,11 +1085,9 @@
       settingsPanelTitle.addEventListener('mousedown', (e) => {
         if (e.target === closeSettings || e.target.closest('.close-x')) return;
         isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
+        startX = e.clientX; startY = e.clientY;
         const rect = geoSettings.getBoundingClientRect();
-        startLeft = rect.left;
-        startTop = rect.top;
+        startLeft = rect.left; startTop = rect.top;
         geoSettings.style.right = 'auto';
         geoSettings.style.left = startLeft + 'px';
         geoSettings.style.top = startTop + 'px';
@@ -1145,159 +1097,110 @@
 
       document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        let newLeft = startLeft + dx;
-        let newTop = startTop + dy;
-        const panelWidth = geoSettings.offsetWidth;
-        const panelHeight = geoSettings.offsetHeight;
+        const dx = e.clientX - startX; const dy = e.clientY - startY;
+        let newLeft = startLeft + dx; let newTop = startTop + dy;
+        const panelWidth = geoSettings.offsetWidth; const panelHeight = geoSettings.offsetHeight;
         newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panelWidth));
         newTop = Math.max(0, Math.min(newTop, window.innerHeight - panelHeight));
-        geoSettings.style.left = newLeft + 'px';
-        geoSettings.style.top = newTop + 'px';
+        geoSettings.style.left = newLeft + 'px'; geoSettings.style.top = newTop + 'px';
       });
 
       document.addEventListener('mouseup', () => {
-        if (isDragging) {
-          isDragging = false;
-          geoSettings.style.transition = '';
-        }
-      });
-      
-      settingsPanelTitle.addEventListener('touchstart', (e) => {
-        if (e.target === closeSettings || e.target.closest('.close-x')) return;
-        const touch = e.touches[0];
-        isDragging = true;
-        startX = touch.clientX;
-        startY = touch.clientY;
-        const rect = geoSettings.getBoundingClientRect();
-        startLeft = rect.left;
-        startTop = rect.top;
-        geoSettings.style.right = 'auto';
-        geoSettings.style.left = startLeft + 'px';
-        geoSettings.style.top = startTop + 'px';
-        geoSettings.style.transition = 'none';
-        e.preventDefault();
-      }, { passive: false });
-      
-      document.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
-        const touch = e.touches[0];
-        const dx = touch.clientX - startX;
-        const dy = touch.clientY - startY;
-        let newLeft = startLeft + dx;
-        let newTop = startTop + dy;
-        const panelWidth = geoSettings.offsetWidth;
-        const panelHeight = geoSettings.offsetHeight;
-        newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panelWidth));
-        newTop = Math.max(0, Math.min(newTop, window.innerHeight - panelHeight));
-        geoSettings.style.left = newLeft + 'px';
-        geoSettings.style.top = newTop + 'px';
-        e.preventDefault();
-      }, { passive: false });
-      
-      document.addEventListener('touchend', () => {
-        if (isDragging) {
-          isDragging = false;
-          geoSettings.style.transition = '';
-        }
+        if (isDragging) { isDragging = false; geoSettings.style.transition = ''; }
       });
     })();
 
-    document.getElementById('btnSideLayers').addEventListener('click', () => {
-      fileInput.click();
-    });
+    document.getElementById('btnSideLayers').addEventListener('click', () => fileInput.click());
+
+    // ==================== 比例尺（真实换算估算） ====================
+    // 可视高度 = 2 * dist * tan(fov/2)，单位与地球半径(1)同；
+    // 地球周长 ≈ 40075 公里 → 每单位 ≈ 40075 / (2π) ≈ 6378.1 公里。
+    const EARTH_KM_PER_UNIT = 40075 / (2 * Math.PI);
 
     function updateScale() {
       const dist = camera.position.length();
-      const scaleVal = Math.round(dist * 400);
-      document.getElementById('geoScale').textContent = `${scaleVal.toLocaleString()} 公里`;
+      const visibleHeightUnits = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      const visibleKm = visibleHeightUnits * EARTH_KM_PER_UNIT;
+      // 取一个好看的刻度：可见高度的 1/5 左右，圆整到 1/2/5 × 10^n
+      const raw = visibleKm / 5;
+      const pow = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1))));
+      const nice = [1, 2, 5, 10].map(m => m * pow).find(v => v >= raw) || raw;
+      document.getElementById('geoScale').textContent = `${Math.round(nice).toLocaleString()} 公里`;
+
       const level = Math.max(1, Math.round((8 - dist) * 2));
       document.getElementById('statusLevel').textContent = level;
     }
 
-    // ==================== 缩略图 ====================
-    const miniCanvas = document.getElementById('miniGlobeCanvas');
-    miniCanvas.width = MINI_SIZE;
-    miniCanvas.height = MINI_SIZE;
-
-    const miniScene = new THREE.Scene();
-    miniScene.background = new THREE.Color(0x0a0e18);
-
-    const miniCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 1000);
-    miniCamera.position.set(0, 0, 3.6);
-    miniCamera.lookAt(0, 0, 0);
-
-    const miniRenderer = new THREE.WebGLRenderer({
-      canvas: miniCanvas, antialias: true, alpha: false, precision: 'highp'
-    });
-    miniRenderer.setSize(MINI_SIZE, MINI_SIZE);
-    miniRenderer.setPixelRatio(1);
-    miniRenderer.outputEncoding = THREE.sRGBEncoding;
-    miniRenderer.toneMapping = THREE.NoToneMapping;
-    miniRenderer.setClearColor(0x0a0e18, 1);
-
-    const miniEarthMaterial = new THREE.MeshBasicMaterial({ map: null, color: 0x1a3a6a });
-    const miniGeometry = new THREE.SphereGeometry(1, 64, 64, 0, Math.PI * 2, 0, Math.PI);
-    const miniEarth = new THREE.Mesh(miniGeometry, miniEarthMaterial);
-    miniScene.add(miniEarth);
-
+    // ==================== 小地球更新 ====================
     function updateMiniGlobe() {
-      if (currentTexture) {
-        miniEarthMaterial.map = currentTexture;
-        miniEarthMaterial.color.setHex(0xffffff);
-        miniEarthMaterial.needsUpdate = true;
-      }
-      const mainDir = camera.position.clone().normalize();
-      if (mainDir.length() < 0.01) mainDir.set(0, 0, 1);
-      miniCamera.position.copy(mainDir.multiplyScalar(3.6));
+      const dir = camera.position.clone().normalize();
+      if (dir.length() < 0.01) dir.set(0, 0, 1);
+
+      miniCamera.position.copy(dir.multiplyScalar(MINI_CAMERA_DISTANCE));
+      miniCamera.fov = MINI_CAMERA_FOV;
+      miniCamera.aspect = 1;
+      miniCamera.near = 0.1;
+      miniCamera.far = 20;
+      miniCamera.updateProjectionMatrix();
       miniCamera.lookAt(0, 0, 0);
       miniRenderer.render(miniScene, miniCamera);
     }
 
     // ==================== 动画 ====================
-    let miniFrameCounter = 0;
+    const clock = new THREE.Clock();
+    let lastDelta = 0.016;
+
     function animate() {
       requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      lastDelta = delta;
+
       const dist = camera.position.length();
       const minD = controls.minDistance;
       const maxD = controls.maxDistance;
       const s = Math.max(0, Math.min(1, (dist - minD) / (maxD - minD)));
       controls.rotateSpeed = ROTATE_SPEED_NEAR + s * (ROTATE_SPEED_FAR - ROTATE_SPEED_NEAR);
       controls.zoomSpeed = ZOOM_SPEED_NEAR + s * (ZOOM_SPEED_FAR - ZOOM_SPEED_NEAR);
+
       if (cloudEnabled && clouds.visible) {
-        clouds.rotation.y += cloudRotationSpeed;
+        clouds.rotation.y += cloudRotationSpeed * (delta * 60);
       }
-      stars.rotation.y += 0.00001;
-      
+      stars.rotation.y += 0.0006 * (delta * 60);
+
       if (sunHalo1.visible) {
         const pulse = 1 + Math.sin(Date.now() * 0.0015) * 0.03;
         sunHalo1.scale.set(pulse, pulse, pulse);
         sunHalo2.scale.set(pulse * 0.99, pulse * 0.99, pulse * 0.99);
         sunHalo3.scale.set(pulse * 0.98, pulse * 0.98, pulse * 0.98);
       }
-      
-      if (lightMode === 'sun') {
-        starsMaterial.opacity = originalStarsOpacity * 0.75;
-      } else {
-        starsMaterial.opacity = originalStarsOpacity;
-      }
-      
+
+      if (lightMode === 'sun') starsMaterial.opacity = originalStarsOpacity * 0.75;
+      else starsMaterial.opacity = originalStarsOpacity;
+
       controls.update();
       updateScale();
-      
-      if (usePostProcessing && composer) {
-        composer.render();
-      } else {
-        renderer.render(scene, camera);
-      }
-      
-      miniFrameCounter++;
-      if (miniFrameCounter % 2 === 0) {
-        updateMiniGlobe();
+
+      renderer.render(scene, camera);
+
+      // ---- 小地球：按时间节流 + 脏标记跳过 ----
+      miniAccum += delta;
+      if (miniAccum >= MINI_TARGET_INTERVAL) {
+        // delta 异常大（切标签页回来）时清零，避免连画多次
+        miniAccum = miniAccum >= MINI_TARGET_INTERVAL * 2 ? 0 : miniAccum - MINI_TARGET_INTERVAL;
+        if (miniDirty || controls.autoRotate) {
+          updateMiniGlobe();
+          miniDirty = false;
+        }
       }
     }
+
+    // ==================== 启动 ====================
+    setLightMode('global');
+    updateSunPosition();
     animate();
+
+    setTimeout(() => { resolveResources(); finishLoading(); }, 2500);
+    resourcesReady.then(finishLoading);
 
     window.addEventListener('resize', () => { resizeRenderer(); });
   </script>
